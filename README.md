@@ -11,9 +11,17 @@ rodam em rodadas paralelas e passam resultado de um para o outro.
 | [`authoring-flow-yaml`](authoring-flow-yaml/SKILL.md) | Escrever ou editar o YAML na mão, ou entender o que cada propriedade aceita |
 | [`creating-a-flow`](creating-a-flow/SKILL.md) | Transformar uma tarefa de várias etapas num pipeline, decidindo os nós por entrevista |
 | [`reviewing-flow-integrity`](reviewing-flow-integrity/SKILL.md) | Auditar um flow antes de confiar trabalho real a ele, ou quando ele recusa salvar, rodar ou entrega handoff vazio |
+| [`rerunning-a-flow`](rerunning-a-flow/SKILL.md) | Antes de executar ou retomar um flow que já pode ter rodado e deixado arquivos no projeto |
+| [`adjusting-a-flow`](adjusting-a-flow/SKILL.md) | Mexer num flow que já rodou, quando o que ele produziu ainda está no projeto |
 
-`authoring-flow-yaml` é a referência; as outras duas a citam em vez de repetir o
+`authoring-flow-yaml` é a referência; as outras a citam em vez de repetir o
 schema.
+
+As duas últimas existem por um motivo específico: um flow escreve arquivos de
+verdade, e apertar ▶ de novo num flow concluído **refaz todos os nós** e
+sobrescreve o que a execução anterior produziu, sem aviso. O vide-code grava o
+que cada execução tocou em `.flows/.runs/<slug>.yaml`, e essas skills leem esse
+registro em vez de adivinhar.
 
 ## Instalação
 
@@ -31,6 +39,8 @@ mkdir -p ~/.agents/skills
 cp -r vide-code-flow/authoring-flow-yaml ~/.agents/skills/
 cp -r vide-code-flow/creating-a-flow ~/.agents/skills/
 cp -r vide-code-flow/reviewing-flow-integrity ~/.agents/skills/
+cp -r vide-code-flow/rerunning-a-flow ~/.agents/skills/
+cp -r vide-code-flow/adjusting-a-flow ~/.agents/skills/
 ```
 
 O escopo de projeto tem precedência sobre o global, então uma cópia local
