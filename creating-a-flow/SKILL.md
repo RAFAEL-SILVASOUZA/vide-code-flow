@@ -13,8 +13,8 @@ would do worse in one pass. The hard part is not the YAML, it is deciding what
 the steps are and what each one hands to the next.
 
 **REQUIRED BACKGROUND:** `authoring-flow-yaml` has the schema, the file
-location, the positioning grid and the two connection types. This skill is the
-process; that one is the reference.
+location, the positioning grid and the connection types, `retry` included.
+This skill is the process; that one is the reference.
 
 **Core principle:** design the graph backwards from the deliverable, then write
 the prompts. Never the other way round.
@@ -35,7 +35,10 @@ and stop asking as soon as the answers are unambiguous.
 5. **For each dependency: does the downstream step need the previous agent's
    TEXT, or only the state it left behind?** Text means `data`. State means
    `order`.
-6. **What must be true before the flow starts?** Anything the flow cannot do
+6. **If a step reviews another step's work, what happens when it finds a
+   problem?** Fixing it itself (the reviewer rewrites the output) and sending
+   it back (the original agent redoes it) are different designs. See below.
+7. **What must be true before the flow starts?** Anything the flow cannot do
    itself belongs in the user's hands, not in a node.
 
 If the user's answer to question 1 collapses into a single step, say so and
@@ -68,6 +71,28 @@ plus the handoff sections appended. So:
 - **Do not tell a node about work another node owns.** Overlap makes two agents
   produce contradictory text and the downstream agent picks arbitrarily.
 - **Keep the last node's output the deliverable**, not a summary of the flow.
+
+## Fix it in place, or send it back?
+
+A reviewer node has two honest designs, and mixing them up is easy to do
+without noticing:
+
+- **Fix it in place.** The reviewer rewrites the output itself and that
+  rewrite is the deliverable. No `retry` edge needed; this is the default,
+  and the right choice whenever the reviewer is capable of correcting what it
+  finds (the `Revisor` in the worked example below does this).
+- **Send it back.** The reviewer cannot, or should not, fix the problem
+  itself — only the original specialist can redo the work properly (it needs
+  tools, context or a skill the reviewer does not have). This needs a `retry`
+  edge from the reviewer back to that node; see `authoring-flow-yaml` for the
+  mechanics.
+
+Ask this whenever a step's job is to check another step's work, before
+picking either shape. Do not default to `retry` just because a validator
+exists in the graph: it costs an extra tool call and, if it fans in from
+several nodes, rejects all of them together, not just the broken one. If the
+reviewer would only need to reject one specific upstream node at a time, give
+that one its own dedicated validator instead of sharing one across several.
 
 ## Worked example
 
@@ -151,3 +176,5 @@ with non-alphanumerics collapsed to `-`. The example above goes in
 | Generic node names | Children read `## Resultado de Agente 2` | Name for the product |
 | A final node that summarises the flow | The deliverable is lost | Last node outputs the artifact itself |
 | Chain with no parallelism | Slow for no reason | Anything independent shares a round for free |
+| One validator fanned in from several specialists, expecting selective retry | Rejecting sends all of them back together, same feedback | Give each specialist its own validator if rejection must be selective |
+| Reviewer meant to send work back, wired as plain `data` | It just writes a report nobody redoes anything from | Add the `retry` edge, and write the prompt to actually reject when needed |

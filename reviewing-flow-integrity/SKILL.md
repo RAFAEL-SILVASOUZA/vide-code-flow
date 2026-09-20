@@ -30,7 +30,9 @@ Blocking. The flow will not save or will not run.
 - [ ] two nodes sharing an `id`
 - [ ] an edge whose `from` or `to` is not an existing node id
 - [ ] an edge from a node to itself
-- [ ] a cycle anywhere in the graph
+- [ ] a cycle among `data`/`order` edges (a `retry` edge closes a loop on
+      purpose and does not count; see below)
+- [ ] a `retry` edge with no `data`/`order` edge already going the other way
 
 **Run is additionally blocked by:**
 
@@ -67,18 +69,32 @@ Non-blocking, and this is where unproductive pipelines actually live.
       or is negative. The file and the canvas will disagree after the next load.
 - [ ] **Cards on top of each other.** Two nodes closer than 220 horizontally
       and 120 vertically overlap on screen. Legal, unreadable.
-- [ ] **Backwards edge.** `to.x` is less than `from.x`. The connection loops
-      around both cards.
+- [ ] **Backwards edge.** `to.x` is less than `from.x`, on a `data` or `order`
+      edge. The connection loops around both cards. Does not apply to
+      `retry`: it is always backwards, that is the point.
 - [ ] **`instruction: ""`.** Noise in a file meant to be hand-edited.
+- [ ] **Validator prompt silent on the contract.** A node with an outgoing
+      `retry` edge gets the `flow_validate` tool forced on it, but if its
+      prompt never says what makes the work rejectable or what feedback
+      should contain, it tends to always approve or to reject with feedback
+      too vague to act on. Read the prompt for an explicit rejection
+      criterion, not just "audit and report".
+- [ ] **Fan-in validator expecting selective retry.** A validator with
+      `retry` edges to more than one node rejects all of them together, same
+      feedback, every time — there is no way to send back just the one that
+      is wrong. If the user's intent was "only redo the broken one", this is
+      a defect worth flagging, fixable by giving each upstream node its own
+      validator instead of sharing one.
 
 ## How to check the graph properties
 
 Cycles, orphans and terminals are easy to get wrong by eye on anything past
-five nodes. Reduce it to two lists first:
+five nodes. Reduce it to two lists first, **counting only `data`/`order`
+edges** — leave `retry` out of both lists, it plays no part in scheduling:
 
 ```
-parents[n]  = every edge with to == n
-children[n] = every edge with from == n
+parents[n]  = every data/order edge with to == n
+children[n] = every data/order edge with from == n
 
 orphan      : parents[n] empty AND children[n] empty
 terminal    : children[n] empty
@@ -95,6 +111,11 @@ round k = every node whose parents are all in rounds < k
 If some node never lands in a round, the graph has a cycle. If a round is wide,
 that is parallelism and it is free; if every round has one node, check whether
 the chain is real.
+
+Check `retry` edges separately, by a different rule: for each `retry` edge
+`from: V, to: T`, confirm a `data`/`order` edge `from: T, to: V` exists in the
+lists above. If it does not, save already rejects the flow, so this is a
+tier-1 finding, not a tier-2 one.
 
 ## Reporting
 

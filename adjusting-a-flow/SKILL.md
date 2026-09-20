@@ -36,8 +36,11 @@ Ask about the change and the consequence together. One message.
 2. **Which of these files should survive the change?** Name them from the
    manifest. Some are hand-edited since, some are disposable.
 3. **Should the flow rerun after the edit, or only the affected part?** There
-   is no partial rerun in the tool: a run redoes every node. If only one node's
-   output is wrong, deleting its artifact and rerunning still redoes all of it.
+   is no partial rerun of a *finished* run: pressing play again redoes every
+   node. If only one node's output is wrong, deleting its artifact and
+   rerunning still redoes all of it. (A `retry` edge is different: it
+   partially reruns a node automatically, but only reactively, inside a run
+   that is still going. It is not a substitute for this gate.)
 
 Do not ask what they want the flow to do from scratch. They already have a
 flow; the question is what to change about it.
@@ -53,6 +56,7 @@ flow; the question is what to change about it.
 | Delete a node | Its artifacts are orphaned: nothing regenerates them, and nothing removes them either. Decide explicitly |
 | Change `data` to `order` | The downstream agent loses an input it was written to read. Its prompt must change too |
 | Change `order` to `data` | The downstream agent gains a section it ignores until its prompt mentions it |
+| Add a `retry` edge from an existing node to one of its `data`/`order` parents | No effect on past artifacts, but changes future runs: that parent can now be sent back to redo. Needs the forward edge already in place, and the new validator's prompt updated to actually reject when appropriate |
 | Move a card (`x`, `y`) | Nothing. Layout only |
 | Rename the flow | The file keeps its old slug, and so does the manifest. Nothing breaks, but the names stop matching |
 
@@ -74,6 +78,6 @@ flow.
 | Editing the YAML and stopping there | Say what happens to the files the flow already wrote |
 | Renaming a node without touching its children | Grep the other prompts for the old name in the same edit |
 | Rebuilding the whole flow for one bad node | Change that node's prompt |
-| Promising a partial rerun | Every run redoes every node. Say so |
+| Promising a partial rerun of a finished run | Pressing play again redoes every node. Only a live `retry` edge reruns partially, and only reactively |
 | Deleting a node and leaving its output | Ask whether the file should be removed too |
 | Running straight after the edit | The rerun gate applies to your own edits as well |

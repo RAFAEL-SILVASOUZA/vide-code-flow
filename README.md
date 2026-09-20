@@ -80,10 +80,12 @@ edges:
 
 O schema, as regras de validação, o passo da grade de posicionamento, o formato
 do handoff e a semântica de execução descritos nestas skills foram extraídos do
-código do vide-code (`FlowDomain`, `FlowStorageService`, `FlowRunnerService`),
-não de memória. Todos os exemplos em YAML deste repositório foram validados
-contra `FlowDomain.validateStructure`, `FlowDomain.validate` e
-`FlowDomain.fromStorageNodes`, incluindo a checagem de que as coordenadas
-sobrevivem ao encaixe na grade sem mudar de valor.
+código do vide-code (`FlowDomain`, `FlowStorageService`, `FlowRunnerService`,
+`AgentToolService`), não de memória. Todos os exemplos em YAML deste
+repositório foram validados contra `FlowDomain.validateStructure`,
+`FlowDomain.validate` e `FlowDomain.fromStorageNodes`, incluindo a checagem de
+que as coordenadas sobrevivem ao encaixe na grade sem mudar de valor.
 
-Vale contra o vide-code na versão 1.10.24, formato de flow versão 2.
+Vale contra o vide-code na versão 1.10.54, formato de flow versão 2, incluindo
+a aresta `retry` (validador manda o trabalho de volta) e o contrato da tool
+`flow_validate`.
