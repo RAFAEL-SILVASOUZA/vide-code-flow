@@ -27,6 +27,10 @@ flow edit: use `creating-a-flow` and stop reading here.
 If it is there, the flow produced things. Work out which of the recorded
 artifacts the change invalidates, then run the conversation below.
 
+Also check for `<workspace>/.flows/.runs/<slug>.checkpoint.json`. If it
+exists, the run is **unfinished**, and the edit lands on a run that will
+resume, not restart. See Editing an unfinished run below.
+
 ## The conversation
 
 Ask about the change and the consequence together. One message.
@@ -36,11 +40,13 @@ Ask about the change and the consequence together. One message.
 2. **Which of these files should survive the change?** Name them from the
    manifest. Some are hand-edited since, some are disposable.
 3. **Should the flow rerun after the edit, or only the affected part?** There
-   is no partial rerun of a *finished* run: pressing play again redoes every
+   is no partial rerun of a *completed* run: pressing play again redoes every
    node. If only one node's output is wrong, deleting its artifact and
-   rerunning still redoes all of it. (A `retry` edge is different: it
-   partially reruns a node automatically, but only reactively, inside a run
-   that is still going. It is not a substitute for this gate.)
+   rerunning still redoes all of it. An *unfinished* run is the opposite: it
+   resumes and skips every `done` node, so it may redo less than the edit
+   needs. (A `retry` edge is different again: it partially reruns a node
+   automatically, but only reactively, inside a run that is still going. It
+   is not a substitute for this gate.)
 
 Do not ask what they want the flow to do from scratch. They already have a
 flow; the question is what to change about it.
@@ -57,12 +63,31 @@ flow; the question is what to change about it.
 | Change `data` to `order` | The downstream agent loses an input it was written to read. Its prompt must change too |
 | Change `order` to `data` | The downstream agent gains a section it ignores until its prompt mentions it |
 | Add a `retry` edge from an existing node to one of its `data`/`order` parents | No effect on past artifacts, but changes future runs: that parent can now be sent back to redo. Needs the forward edge already in place, and the new validator's prompt updated to actually reject when appropriate |
+| Toggle `reasoning` on a node | Nothing already produced changes. Future runs of that node think more or less |
 | Move a card (`x`, `y`) | Nothing. Layout only |
-| Rename the flow | The file keeps its old slug, and so does the manifest. Nothing breaks, but the names stop matching |
+| Rename the flow | The file keeps its old slug, and so does the manifest. An unfinished run's checkpoint stops matching and is ignored: the next play starts over instead of resuming |
 
-The rename row is the one that bites. A node's `name` is the heading of the
-handoff it sends, so renaming silently breaks a contract that no validation
-checks.
+The node rename row is the one that bites. A node's `name` is the heading of
+the handoff it sends, so renaming silently breaks a contract that no
+validation checks.
+
+## Editing an unfinished run
+
+When a checkpoint exists, the next play resumes, and resuming applies the edit
+only partially:
+
+| Edit | What the resume does with it |
+|---|---|
+| Change the prompt of a `done` node | Ignored. The node is skipped and its old answer keeps feeding its children |
+| Change the prompt of a node interrupted mid-work | Ignored. It continues its own saved conversation, with the task it started with |
+| Change the prompt of a `pending` or failed node | Applied. It runs from scratch with the new prompt |
+| Add a node | Runs, once its parents are `done` |
+| Delete a node | Dropped from the run |
+
+So if the edit touches a `done` or interrupted node, the honest options are
+**start over** (`restart: true`, or Start over in the panel's modal), or
+accept that the old output stays. Say which, and let the user pick. Starting
+over does not remove the files the unfinished run already wrote.
 
 ## Then
 
@@ -78,6 +103,7 @@ flow.
 | Editing the YAML and stopping there | Say what happens to the files the flow already wrote |
 | Renaming a node without touching its children | Grep the other prompts for the old name in the same edit |
 | Rebuilding the whole flow for one bad node | Change that node's prompt |
-| Promising a partial rerun of a finished run | Pressing play again redoes every node. Only a live `retry` edge reruns partially, and only reactively |
+| Promising a partial rerun of a completed run | Pressing play again redoes every node. Only a live `retry` edge reruns partially, and only reactively |
+| Editing a `done` node of an unfinished run and resuming | The resume skips it, and the edit has no effect. Start over, or say the old output stays |
 | Deleting a node and leaving its output | Ask whether the file should be removed too |
 | Running straight after the edit | The rerun gate applies to your own edits as well |

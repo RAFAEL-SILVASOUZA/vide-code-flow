@@ -31,7 +31,8 @@ and stop asking as soon as the answers are unambiguous.
 3. Repeat question 2 on each new node until the answers are things that already
    exist in the repository or in the user's head. That is the top of the graph.
 4. **Which of these steps do not depend on each other?** Independent steps run
-   in the same parallel round and cost nothing extra in wall time.
+   in parallel, each branch at its own pace, and cost nothing extra in wall
+   time.
 5. **For each dependency: does the downstream step need the previous agent's
    TEXT, or only the state it left behind?** Text means `data`. State means
    `order`.
@@ -39,7 +40,8 @@ and stop asking as soon as the answers are unambiguous.
    problem?** Fixing it itself (the reviewer rewrites the output) and sending
    it back (the original agent redoes it) are different designs. See below.
 7. **What must be true before the flow starts?** Anything the flow cannot do
-   itself belongs in the user's hands, not in a node.
+   itself belongs in the user's hands, not in a node. That includes every
+   decision: nodes run unattended and never ask the user anything.
 
 If the user's answer to question 1 collapses into a single step, say so and
 suggest a plain agent instead. A one-node flow is a worse way to run one agent.
@@ -56,11 +58,14 @@ The order matters, and it is the order the panel is designed around.
    name a node after what it *produces*: `Estrutura do Projeto`, not `Agente 1`.
 4. **Prompts, downstream nodes last.** By the time you write a child's prompt
    you know exactly which sections it will receive and under which headings.
+5. **Reasoning, per node.** It is on by default. Turn it off
+   (`reasoning: false`) only where the node's job is mechanical.
 
 ## Writing a node prompt
 
-Each node runs as its own agent with the node's prompt as its system prompt,
-plus the handoff sections appended. So:
+Each node runs as its own unattended agent. The node's prompt is its task,
+with the handoff sections appended, under a fixed system prompt that says the
+final response is the deliverable. So:
 
 - **Say what the node produces**, in what shape, because that text is what the
   next agent reads. "Return a bullet list of every public endpoint" beats "look
@@ -71,6 +76,22 @@ plus the handoff sections appended. So:
 - **Do not tell a node about work another node owns.** Overlap makes two agents
   produce contradictory text and the downstream agent picks arbitrarily.
 - **Keep the last node's output the deliverable**, not a summary of the flow.
+- **Never ask the agent to check with the user.** It cannot, and it will
+  guess. Settle the decision in the interview and write it into the prompt.
+
+## Reasoning on or off
+
+Every card has a Reasoning checkbox, on by default. Off, the node runs with
+reasoning disabled even when the model has it enabled: faster and cheaper,
+but worse at judgement.
+
+- **Leave it on** for nodes that plan, review, validate, or decide between
+  options. The quality of the whole flow rests on those nodes.
+- **Turn it off** for nodes that collect or transcribe: listing files,
+  running a command and reporting the output, or reformatting a handoff.
+
+Do not ask the user about this node by node. Propose the split with the
+graph and let them object.
 
 ## Fix it in place, or send it back?
 
@@ -156,8 +177,11 @@ edges:
     type: data
 ```
 
-`visao` and `endpoints` share no edge, so they run in the same round, in
-parallel. Both feed `revisor`, which therefore sees two sections.
+`visao` and `endpoints` share no edge, so both start the moment `estrutura`
+finishes, in parallel. Both feed `revisor`, which starts when the slower of
+the two finishes and sees two sections. Every node here writes or judges
+text, so reasoning stays on everywhere; if `estrutura` only listed files, it
+would be the candidate for `reasoning: false`.
 
 ## Where to put it
 
@@ -175,6 +199,8 @@ with non-alphanumerics collapsed to `-`. The example above goes in
 | Two nodes with overlapping scope | Contradictory handoffs | Give each node an exclusive job and say so in its prompt |
 | Generic node names | Children read `## Resultado de Agente 2` | Name for the product |
 | A final node that summarises the flow | The deliverable is lost | Last node outputs the artifact itself |
-| Chain with no parallelism | Slow for no reason | Anything independent shares a round for free |
+| Chain with no parallelism | Slow for no reason | Anything independent runs in parallel for free |
+| Prompt that says "ask the user" or "confirm before" | The node cannot ask, so it guesses | Decide it in the interview and write the answer into the prompt |
+| Reasoning off on a reviewer or validator | Saves time on the one node whose judgement the flow depends on | Keep reasoning on wherever the job is judgement |
 | One validator fanned in from several specialists, expecting selective retry | Rejecting sends all of them back together, same feedback | Give each specialist its own validator if rejection must be selective |
 | Reviewer meant to send work back, wired as plain `data` | It just writes a report nobody redoes anything from | Add the `retry` edge, and write the prompt to actually reject when needed |

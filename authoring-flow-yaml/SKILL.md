@@ -34,6 +34,16 @@ same validation applies to both.
 - The file name is independent of `name` after creation. Renaming the flow in
   the panel does not rename an existing file.
 
+Two more files sit next to the flows, both written by the runner, never by
+hand:
+
+| File | What it is | Lifetime |
+|---|---|---|
+| `.flows/.runs/<slug>.yaml` | Manifest: what the last run touched, node by node | Rewritten at the end of every run, paused or completed |
+| `.flows/.runs/<slug>.checkpoint.json` | Progress of an unfinished run, including each finished node's answer | Written after every node; deleted when the run completes |
+
+`rerunning-a-flow` explains how to read both.
+
 ## The shape
 
 ```yaml
@@ -47,6 +57,7 @@ nodes:
       Map the repository layout and report the entry points.
     x: 40
     y: 280
+    reasoning: false
   - id: n2
     name: Planner
     prompt: |-
@@ -70,7 +81,7 @@ edges:
 | `version` | yes | Write `2`. Overwritten with the current version on load, so it never blocks anything. Files at version 1 are migrated on read. |
 | `name` | yes | Non-empty. A flow without a name is rejected on save. Seeds the file slug on first save. |
 | `nodes` | yes | May be empty to save, never to run. |
-| `edges` | yes | May be empty. A flow with no edges runs every node in one parallel round. |
+| `edges` | yes | May be empty. A flow with no edges starts every node at once, in parallel. |
 
 ### Node
 
@@ -78,9 +89,24 @@ edges:
 |---|---|---|
 | `id` | yes | Unique within the flow. Any string. The panel generates `n` + base36 timestamp + 4 random chars; hand-written ids like `planner` are equally valid and far easier to edit. |
 | `name` | to run | **Functional, not cosmetic.** It becomes the heading of the handoff this node sends downstream. See Handoff below. |
-| `prompt` | to run | The agent's system prompt. Use a YAML block scalar (`\|-`) for anything multi-line. |
+| `prompt` | to run | The agent's task. It is sent as the agent's first message, under a fixed system prompt the runner supplies. Use a YAML block scalar (`\|-`) for anything multi-line. |
 | `x`, `y` | yes | Position in pixels. Multiples of 20. See Positioning. |
 | `instruction` | no | The natural-language request that was given to the prompt generator. Purely a record of intent, never executed. Omit it rather than writing `instruction: ""`. |
+| `reasoning` | no | Only `false` means anything: the node runs with reasoning off, overriding the model configuration. Absent means on. `reasoning: true` is accepted but dropped on the next save, so do not bother writing it. The panel shows this as the Reasoning checkbox on the card, with a brain icon when on. |
+
+### What the runner wraps around `prompt`
+
+Every node runs as a background subagent on the model configured for agent
+execution, with the full tool set. The system prompt around the node's task
+is fixed, and it tells the agent three things your prompt should not fight:
+
+- **It runs unattended and must never ask the user anything.** A prompt that
+  says "confirm with the user before..." cannot be obeyed.
+- **Its final response is the deliverable**, in whatever shape the task asks
+  for. No report template is imposed, so if you want a specific shape,
+  describe it in the prompt.
+- **It works until the task is finished**, with no cap on files read or tools
+  called, and stops rather than expanding scope on its own.
 
 A node missing `name` or `prompt` is a **draft**: it saves fine and shows on the
 canvas with a dashed border, but the flow will not run until it is filled in.
@@ -131,8 +157,10 @@ Three consequences worth internalising:
    contract its children read. Name nodes after what they produce, not after
    what they are: `Estrutura do Projeto` beats `Agente 1`.
 2. **Sections appear in flow node order**, not edge order.
-3. **A parent that answers nothing contributes no section.** A child must not
-   assume a section exists.
+3. **A node that ends with no text fails.** An empty final answer is a node
+   failure, not an empty handoff, so every `done` `data` parent contributes
+   its section. Do not write children to cope with a missing section; write
+   parents so they always answer.
 
 Write the child's prompt so it expects this. A prompt that says "read the
 `## Resultado de Estrutura do Projeto` section below" works; one that says
@@ -174,6 +202,10 @@ it runs:
   `pending`, and so does the validator itself. The `feedback` is appended to
   the target's prompt as `## Feedback da validação` the next time it runs,
   accumulating across attempts if it is rejected more than once.
+- **No verdict counts as a rejection.** If the validator finishes without
+  calling `flow_validate`, it is asked once more. Still nothing, and the run
+  treats it as rejected, with feedback saying the validator did not report
+  a result. It never passes by default.
 - **No attempt cap.** A validator that never approves loops forever; the user
   has to pause the run by hand. Do not promise a retry limit, there is none.
 - **One verdict, not one per target.** A validator with `retry` edges to
@@ -204,8 +236,8 @@ Rules that keep a hand-written layout readable:
 
 - **Always use multiples of 20.** Anything else is snapped on load, so `x: 47`
   silently becomes `40` and your file no longer matches what you see.
-- **Negative coordinates clamp to 0.** There is no space left of or above the
-  origin.
+- **Negative coordinates are fine.** The canvas extends in every direction and
+  negative values are kept as written (still snapped to 20).
 - **Flow left to right.** Edges leave the right edge of a card and enter the
   left edge of the next. Placing a target left of its source makes the edge
   loop backwards around both cards.
@@ -248,24 +280,30 @@ rejects it.
 
 ## How a flow executes
 
-Rounds, not a single path:
+Node by node, not in rounds:
 
-1. Every `pending` node whose `data`/`order` parents are **all** `done` starts,
-   **in parallel**. `retry` edges play no part in this: they never gate
-   readiness, only react afterwards.
-2. When a round finishes, the next round is computed the same way.
-3. A node that fails pauses the whole run.
-4. A node with an outgoing `retry` edge that rejects sends its target(s), and
-   itself, back to `pending` right after it finishes — the same round loop
-   then picks the target up again with the feedback attached, no user action
+1. A `pending` node starts **the moment** all its `data`/`order` parents are
+   `done`, in parallel with whatever is already running. It does not wait for
+   unrelated nodes: two independent branches advance at their own pace.
+   `retry` edges play no part in this: they never gate readiness, only react
+   afterwards.
+2. A node that fails stops anything **new** from starting. Nodes already
+   running on other branches finish, then the run pauses.
+3. A node with an outgoing `retry` edge that rejects sends its target(s), and
+   itself, back to `pending` right after it finishes. The scheduler then
+   picks the target up again with the feedback attached, no user action
    needed.
-5. Resuming re-runs failed nodes from scratch; nodes already `done` are not
-   repeated.
-6. If nothing is ready but something is still pending, the run pauses rather
+4. If nothing is ready but something is still pending, the run pauses rather
    than spinning.
+5. Progress is saved to disk after every node. Pausing, a failure, or closing
+   VS Code in the middle leaves a checkpoint; the next start resumes from it.
+6. Resuming skips nodes already `done` (their saved answers still feed their
+   children), restarts failed nodes from scratch, and continues a node that
+   was interrupted mid-work from its own saved conversation. A completed run
+   has no checkpoint: starting it again redoes every node.
 
-So a flow with no edges is not sequential: it is one parallel round of every
-node at once. If you need order, say so with an edge.
+So a flow with no edges is not sequential: every node starts at once. If you
+need order, say so with an edge.
 
 ## Common mistakes
 
@@ -281,6 +319,8 @@ node at once. If you need order, say so with an edge.
 | `retry` edge drawn before the forward `data`/`order` edge exists | Save rejects it | Connect the two nodes forward first, then add `retry` |
 | Expecting a validator to reject just one of several targets | It rejects every node it has a `retry` edge to, same feedback for all | Give each node its own validator if rejection must be selective |
 | Validator prompt never mentions approving or rejecting | It still gets forced to call `flow_validate`, but tends to always approve or reject with vague feedback | Say explicitly what makes the work rejectable and what feedback should contain |
+| Prompt that asks the user to confirm or choose | The node runs unattended and is told never to ask; it guesses instead | Put the decision in the prompt, or keep that step out of the flow |
+| Writing `reasoning: true` | Harmless, but dropped on the next save | Omit the key; only `false` is stored |
 
 ## Minimal valid flows
 

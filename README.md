@@ -2,7 +2,7 @@
 
 Pacote de skills para projetar, escrever e auditar **flows** do
 [vide-code](https://github.com/RAFAEL-SILVASOUZA): pipelines de agentes que
-rodam em rodadas paralelas e passam resultado de um para o outro.
+rodam em paralelo e passam resultado de um para o outro.
 
 ## As skills
 
@@ -18,10 +18,13 @@ rodam em rodadas paralelas e passam resultado de um para o outro.
 schema.
 
 As duas últimas existem por um motivo específico: um flow escreve arquivos de
-verdade, e apertar ▶ de novo num flow concluído **refaz todos os nós** e
-sobrescreve o que a execução anterior produziu, sem aviso. O vide-code grava o
-que cada execução tocou em `.flows/.runs/<slug>.yaml`, e essas skills leem esse
-registro em vez de adivinhar.
+verdade. Apertar ▶ de novo num flow concluído **refaz todos os nós** e
+sobrescreve o que a execução anterior produziu, sem aviso. Já uma execução
+interrompida (pausa, falha ou VS Code fechado) **retoma** de onde parou e pula
+os nós concluídos, mesmo que o prompt deles tenha mudado. O vide-code grava o
+que cada execução tocou em `.flows/.runs/<slug>.yaml` e o progresso da execução
+inacabada em `.flows/.runs/<slug>.checkpoint.json`, e essas skills leem esses
+dois arquivos em vez de adivinhar.
 
 ## Instalação
 
@@ -50,9 +53,10 @@ sobrepõe a instalada em `~`.
 
 Um arquivo YAML em `<workspace>/.flows/<slug>.yaml`. Cada nó é um agente com o
 próprio prompt; cada conexão diz que um roda antes do outro e, quando é do tipo
-`data`, entrega a resposta dele. A execução acontece em rodadas: todo nó cujos
-predecessores terminaram roda em paralelo. Nós sem nome ou sem prompt são
-rascunhos legítimos, salvam normalmente e só impedem a execução.
+`data`, entrega a resposta dele. Cada nó começa assim que todos os
+predecessores dele terminam, em paralelo com o que já estiver rodando, e o
+progresso é salvo a cada nó. Nós sem nome ou sem prompt são rascunhos
+legítimos, salvam normalmente e só impedem a execução.
 
 ```yaml
 version: 2
@@ -81,11 +85,14 @@ edges:
 O schema, as regras de validação, o passo da grade de posicionamento, o formato
 do handoff e a semântica de execução descritos nestas skills foram extraídos do
 código do vide-code (`FlowDomain`, `FlowStorageService`, `FlowRunnerService`,
-`AgentToolService`), não de memória. Todos os exemplos em YAML deste
+`FlowRunCheckpointDomain`, `FlowController`, `AgentToolService`), não de
+memória. Todos os exemplos em YAML deste
 repositório foram validados contra `FlowDomain.validateStructure`,
 `FlowDomain.validate` e `FlowDomain.fromStorageNodes`, incluindo a checagem de
 que as coordenadas sobrevivem ao encaixe na grade sem mudar de valor.
 
-Vale contra o vide-code na versão 1.10.54, formato de flow versão 2, incluindo
-a aresta `retry` (validador manda o trabalho de volta) e o contrato da tool
-`flow_validate`.
+Vale contra o vide-code na versão 1.10.62, formato de flow versão 2, incluindo
+a aresta `retry` (validador manda o trabalho de volta), o contrato da tool
+`flow_validate`, a opção `reasoning` por nó, o agendamento por nó (sem
+rodadas) e o checkpoint com retomada, inclusive o parâmetro `restart` da tool
+`start_flow`.

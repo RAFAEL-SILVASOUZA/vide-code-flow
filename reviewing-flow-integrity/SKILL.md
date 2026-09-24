@@ -56,17 +56,18 @@ Non-blocking, and this is where unproductive pipelines actually live.
 - [ ] **Handoff heading mismatch.** A child references
       `## Resultado de <name>` with a name no parent actually has, usually
       because a node was renamed. Compare against the parents' current `name`.
-- [ ] **Orphan node.** No incoming and no outgoing edge. It runs in the first
-      round and its output goes nowhere. Either wire it or drop it.
+- [ ] **Orphan node.** No incoming and no outgoing edge. It starts as soon as
+      the run does and its output goes nowhere. Either wire it or drop it.
 - [ ] **Unreachable deliverable.** More than one node has no outgoing edge. A
       flow normally converges; several terminals usually means someone forgot
       an edge.
 - [ ] **Overlapping scope.** Two nodes instructed to produce the same artifact.
       Downstream gets contradictions.
 - [ ] **Serialised independence.** An edge between nodes that share no data and
-      no state dependency. It costs a whole round for nothing.
-- [ ] **Positions off the grid.** Any `x` or `y` that is not a multiple of 20,
-      or is negative. The file and the canvas will disagree after the next load.
+      no state dependency. The child waits for a parent it does not need.
+- [ ] **Positions off the grid.** Any `x` or `y` that is not a multiple of 20.
+      The file and the canvas will disagree after the next load. Negative
+      values are fine.
 - [ ] **Cards on top of each other.** Two nodes closer than 220 horizontally
       and 120 vertically overlap on screen. Legal, unreadable.
 - [ ] **Backwards edge.** `to.x` is less than `from.x`, on a `data` or `order`
@@ -85,6 +86,12 @@ Non-blocking, and this is where unproductive pipelines actually live.
       is wrong. If the user's intent was "only redo the broken one", this is
       a defect worth flagging, fixable by giving each upstream node its own
       validator instead of sharing one.
+- [ ] **Prompt that expects the user.** "Ask the user", "confirm before",
+      "wait for approval". Nodes run unattended and are told never to ask,
+      so the agent guesses. The decision belongs in the prompt.
+- [ ] **Reasoning off where judgement is the job.** `reasoning: false` on a
+      validator, reviewer or planner. Legal, and sometimes deliberate, so
+      ask rather than call it a defect.
 
 ## How to check the graph properties
 
@@ -101,16 +108,18 @@ terminal    : children[n] empty
 source      : parents[n] empty
 ```
 
-Then read the flow as rounds, which is how it actually executes:
+Then assign each node a level. The runner does not execute in levels (each
+node starts the moment its own parents are done), but levels are the
+quickest way to see cycles and parallelism:
 
 ```
-round 1 = every source
-round k = every node whose parents are all in rounds < k
+level 1 = every source
+level k = every node whose parents are all in levels < k
 ```
 
-If some node never lands in a round, the graph has a cycle. If a round is wide,
-that is parallelism and it is free; if every round has one node, check whether
-the chain is real.
+If some node never gets a level, the graph has a cycle. If a level is wide,
+that is parallelism and it is free; if every level has one node, check
+whether the chain is real.
 
 Check `retry` edges separately, by a different rule: for each `retry` edge
 `from: V, to: T`, confirm a `data`/`order` edge `from: T, to: V` exists in the
@@ -168,8 +177,8 @@ Tier 2, three findings:
    `testes -> revisor` as `data` and tell `revisor` to read that section.
 2. **`diff -> testes` is `order` and probably should not exist at all.**
    Running the test suite does not need the diff text or any state the collector
-   leaves behind. Dropping the edge puts both nodes in round 1, in parallel, and
-   the flow gets faster for free.
+   leaves behind. Dropping the edge lets both nodes start at once, in
+   parallel, and the flow gets faster for free.
 3. **Two terminals (`testes` and `revisor`).** Symptom of finding 1, not a
    separate defect. Worth naming so the user sees the shape.
 
@@ -182,6 +191,7 @@ Positions are all multiples of 20, no card overlaps, and no edge runs backwards.
 | Stopping after tier 1 | The tool already does tier 1. The value is tier 2 |
 | Calling a draft node an error | It is legal until the user presses run. Say which gate it hits |
 | Flagging overlapping cards as invalid | It is a layout nit, never a blocker |
-| Assuming a chain is intentional | Ask whether the dependency is real; parallel rounds are free |
+| Assuming a chain is intentional | Ask whether the dependency is real; parallel branches are free |
+| Diagnosing a pause from the YAML alone | A paused run left `.flows/.runs/<slug>.yaml` with the failed node's `error`. Read it first |
 | Reporting findings in file order | Blockers first, always |
 | Inventing findings on a healthy flow | Say it is healthy |
